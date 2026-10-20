@@ -41,7 +41,7 @@ const logger = createLogger("registry.erc8004");
 export function requireEvmChain(chainType?: ChainType): void {
   if (chainType === "solana") {
     throw new Error(
-      "ERC-8004 requires an EVM wallet. Solana automatons cannot register on-chain via ERC-8004. "
+      "ERC-8004 requires an EVM wallet. Solana automatons cannot register on-chain via ERC-8004. " +
       "Your identity is registered via Conway API instead.",
     );
   }

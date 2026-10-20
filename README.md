@@ -100,7 +100,7 @@ Suite Atlas/Python :
 
 ```bash
 cd atlas-local/atlas-control
-python3 -m unittest discover -p 'test_*.py'
+python3 -m unittest discover -s atlas-local/atlas-control -p 'test_*.py'
 ```
 
 Les tests peuvent créer des fichiers temporaires et des bases éphémères hors Git. Ils ne doivent jamais réutiliser une base Atlas vivante.
