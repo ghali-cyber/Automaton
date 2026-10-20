@@ -17,7 +17,7 @@ Le dépôt contient uniquement le code et des exemples de configuration. Il ne c
 
 ```bash
 git clone https://github.com/ghali-cyber/Automaton.git
-cd Automate
+cd Automaton
 corepack enable
 pnpm install --frozen-lockfile
 pnpm typecheck
@@ -99,7 +99,6 @@ pnpm test
 Suite Atlas/Python :
 
 ```bash
-cd atlas-local/atlas-control
 python3 -m unittest discover -s atlas-local/atlas-control -p 'test_*.py'
 ```
 
