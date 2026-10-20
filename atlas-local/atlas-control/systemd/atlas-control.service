@@ -1,0 +1,25 @@
+[Unit]
+Description=Atlas local control plane
+After=network.target ollama.service
+
+[Service]
+Type=simple
+User=atlas-control
+Group=atlas-control
+WorkingDirectory=/opt/atlas-control
+ExecStart=/usr/bin/python3 /opt/atlas-control/control.py
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/atlas-control /run/atlas-control
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

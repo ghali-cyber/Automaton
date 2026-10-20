@@ -1,0 +1,51 @@
+node_modules/
+dist/
+
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+!*.env.example
+wallet.json
+*.key
+*.pem
+*secret*
+*token*
+*credential*
+
+# Runtime state and local databases
+.automaton/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs, caches, and generated artifacts
+logs/
+cache/
+.cache/
+.npm/
+.pnpm-store/
+*.log
+*.tgz
+coverage/
+
+# Local working copies and backups
+work/
+backups/
+*.bak
+.atlas-runtime/
+Atlas-Partner-State-Pack.zip
+
+# Editors and Windows user artifacts
+.vscode/
+.idea/
+Desktop.ini
+*.lnk
+*.stackdump
+
+# Operating-system files
+.DS_Store
+Thumbs.db
