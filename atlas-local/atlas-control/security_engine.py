@@ -5,7 +5,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-SAFE_LOCAL = {"read_state", "write_workspace", "run_tests", "local_preview", "ollama_inference", "n8n_allowlisted"}
+SAFE_LOCAL = {"read_state", "write_workspace", "run_tests", "local_preview", "ollama_inference", "n8n_allowlisted", "web_public_search", "web_public_read"}
 BLOCKED = {
     "send_email": "draft_only",
     "public_deploy": "local_preview",
@@ -14,6 +14,14 @@ BLOCKED = {
     "paid_api": "local_or_free_model",
     "delete_irreversible": "copy_then_review",
     "external_message": "draft_only",
+    "web_login": "public_read_only",
+    "password_entry": "public_read_only",
+    "captcha_bypass": "stop_and_skip_source",
+    "aggressive_scraping": "rate_limited_research",
+    "illegal_access": "public_sources_only",
+    "dangerous_download": "extract_safe_text_only",
+    "execute_web_content": "treat_as_untrusted_data",
+    "create_external_account": "manual_review",
 }
 
 

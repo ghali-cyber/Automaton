@@ -1,0 +1,36 @@
+[Unit]
+Description=Atlas restricted local business tools
+RequiresMountsFor=/srv/atlas-workspace
+After=network.target
+[Service]
+Type=simple
+User=atlas-tools
+Group=atlas
+ExecStart=/usr/bin/python3 -I /opt/atlas-business/broker.py
+StateDirectory=atlas-business-snapshots
+StateDirectoryMode=0700
+RuntimeDirectory=atlas-business
+RuntimeDirectoryMode=0750
+UMask=0077
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ReadWritePaths=/srv/atlas-workspace
+InaccessiblePaths=/media /var/lib/automaton-local /var/backups
+TemporaryFileSystem=/mnt:ro
+BindReadOnlyPaths=/etc/resolv.conf:/mnt/wsl/resolv.conf
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+MemoryMax=512M
+MemorySwapMax=0
+TasksMax=64
+CPUQuota=100%
+Restart=on-failure
+RestartSec=5
+[Install]
+WantedBy=multi-user.target

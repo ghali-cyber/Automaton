@@ -13,13 +13,15 @@ import monitoring_engine
 import financial_simulation
 import opportunity_engine
 import durable_queue
+import security_engine
+import web_research
 STATE=pathlib.Path(os.environ.get('ATLAS_CONTROL_STATE','/var/lib/atlas-control'))
 DB=STATE/'atlas.sqlite'
 TOKEN=secrets.token_urlsafe(32)
 WAKE=threading.Event()
-SOCKET=os.environ.get('ATLAS_CONTROL_SOCKET','/run/atlas-control/control.sock')
+SOCKET='/run/atlas-control/control.sock'
 STAGES=['research','planning','building','testing','correction','preview','learning','decision']
-POLICY={'external_actions':False,'payments':False,'wallet':False,'trading':False,'email':False,'deployment':False,'general_web':False,'research':'Wikipedia contrôlée, lecture seule','max_projects_per_day':3,'max_test_attempts':2,'max_project_minutes':15,'max_parallel_heavy_tasks':1,'safe_alternatives':{'payment':'simulation','trading':'paper trading','email':'brouillon','deployment':'preview locale','paid_api':'alternative gratuite/locale','irreversible':'copie ou simulation'},'autonomy':'Atlas prend les décisions business ordinaires dans les limites locales. Les actions interdites deviennent BLOCKED_BY_POLICY et la boucle poursuit une tâche sûre.'}
+POLICY={'external_actions':False,'payments':False,'wallet':False,'trading':False,'email':False,'deployment':False,'general_web':'controlled_public_read','research':'Web public contrôlé, multi-source, preuves persistées','max_projects_per_day':3,'max_test_attempts':2,'max_project_minutes':15,'max_parallel_heavy_tasks':1,'web_limits':{'requests_per_10_minutes':30,'minimum_interval_seconds':1,'retries':1,'timeout_seconds':12,'redirects':False,'captcha_bypass':False,'login':False,'downloads':False},'safe_alternatives':{'payment':'simulation','trading':'paper trading','email':'brouillon','deployment':'preview locale','paid_api':'alternative gratuite/locale','irreversible':'copie ou simulation','captcha':'ignorer la source','login':'source publique sans compte'},'autonomy':'Atlas prend les décisions business ordinaires dans les limites locales. Les actions interdites deviennent BLOCKED_BY_POLICY et la boucle poursuit une tâche sûre.'}
 
 def now(): return datetime.datetime.now(datetime.timezone.utc).isoformat()
 @contextlib.contextmanager
@@ -48,6 +50,8 @@ def init():
         financial_simulation.init_schema(c)
         opportunity_engine.init_schema(c)
         durable_queue.init_schema(c)
+        security_engine.init_schema(c)
+        web_research.init_schema(c)
         recovered=durable_queue.recover_all_running(c)
         existing=c.execute('SELECT * FROM projects ORDER BY created').fetchall()
         for index,row in enumerate(existing):
@@ -181,6 +185,33 @@ def run_opportunity_cycle():
     with conn() as c:
         result=opportunity_engine.select_opportunity(c,candidates,create_selected)
     event(result.get('project_id'),'opportunity','Cycle autonome terminé : génération, comparaison, sélection et création persistées.',result)
+    return result
+
+def run_web_opportunity_cycle():
+    """Research three generated opportunities on the public Web before selection."""
+    with conn() as c:
+        authorization=security_engine.authorize(c,'web_public_search',context={'scope':'three_opportunities','external_actions':False})
+    if not authorization['allowed']:raise ValueError(authorization['reason'])
+    lessons=[]
+    for memory in memories(20):lessons.extend(str(item) for item in memory.get('lessons',[])[:3])
+    candidates=opportunity_engine.generate_opportunities({'lessons':lessons})[:3]
+    with conn() as c:research=web_research.research_candidates(c,candidates,broker,max_open_per_candidate=2)
+    if research['status']!='researched':
+        event(None,'web_research','Recherche Web insuffisante ; aucune opportunité sélectionnée.',research)
+        return {**research,'selected':None,'decision':'INSUFFICIENT_EVIDENCE'}
+    def create_selected(candidate):
+        idea=candidate['name']+' — '+candidate['problem']+' Hypothèse: '+candidate['hypothesis']
+        created=start({'idea':idea})
+        save(created['id'],opportunity={'name':candidate['name'],'hypothesis':candidate['hypothesis'],'confidence':candidate['confidence'],'channel':candidate['channel'],'generated_autonomously':True,'web_research_run_id':research['run_id'],'sources':candidate['evidence'].get('sources',[]),'web_analysis':candidate.get('web_analysis',{})})
+        return created['id']
+    with conn() as c:selection=opportunity_engine.select_opportunity(c,research['candidates'],create_selected)
+    if selection.get('selected'):
+        with conn() as c:
+            selected=c.execute('SELECT name FROM opportunities WHERE id=?',(selection['selected'],)).fetchone()[0]
+            web_research.link_selection(c,research['run_id'],selection['run_id'],selected,selection['project_id'])
+    else:selected=None
+    result={**selection,'web_research_run_id':research['run_id'],'researched_opportunities':len(research['candidates']),'source_count':research['source_count'],'independent_domains':research['independent_domains'],'selected_name':selected}
+    event(selection.get('project_id'),'web_research','Cycle Web public contrôlé terminé ; preuves et décision persistées.',result)
     return result
 
 def learn(pid,started,passed,failures,tests):
@@ -373,12 +404,20 @@ def snapshot():
         autonomous_tasks=[dict(r) for r in c.execute('SELECT * FROM autonomous_tasks ORDER BY created DESC LIMIT 200')]
         for item in autonomous_tasks:
             item['payload']=json.loads(item['payload'] or '{}');item['result']=json.loads(item['result'] or '{}')
+        web_research_runs=[dict(r) for r in c.execute('SELECT * FROM web_research_runs ORDER BY created DESC LIMIT 20')]
+        for item in web_research_runs:item['contradictions']=json.loads(item['contradictions'] or '[]')
+        web_sources=[dict(r) for r in c.execute("SELECT * FROM web_sources WHERE status='stored' ORDER BY retrieved_at DESC LIMIT 150")]
+        for item in web_sources:
+            item['metadata']=json.loads(item['metadata'] or '{}');item['excerpt']=item['excerpt'][:1200]
+        web_queries=[dict(r) for r in c.execute('SELECT * FROM web_queries ORDER BY retrieved_at DESC LIMIT 100')]
+        policy_audit=[dict(r) for r in c.execute('SELECT * FROM policy_audit ORDER BY created DESC LIMIT 100')]
+        for item in policy_audit:item['context']=json.loads(item['context'] or '{}')
     with HEALTH_LOCK: h=HEALTH.copy()
     ledger=finance()
     with conn() as c:
         monitoring=monitoring_engine.status(c,h)
         simulation=financial_simulation.summary(c)
-    return dict(projects=projects,versions=versions,tasks=tasks,approvals=approvals,events=events,experiences=memories(100),opportunity_runs=opportunity_runs,opportunities=opportunities,autonomous_tasks=autonomous_tasks,ledger=ledger,health=h,monitoring=monitoring,financial_simulation=simulation,policy=POLICY,paused=paused,data_contract={'currency':'EUR','money_unit':'cents','main_dashboard_excludes_synthetic':True,'ledger_source':'SQLite ledger table','projects_source':'SQLite projects table','versions_source':'SQLite versions table','decisions_source':'SQLite experiences payload','test_projects_are_synthetic':True})
+    return dict(projects=projects,versions=versions,tasks=tasks,approvals=approvals,events=events,experiences=memories(100),opportunity_runs=opportunity_runs,opportunities=opportunities,autonomous_tasks=autonomous_tasks,web_research_runs=web_research_runs,web_sources=web_sources,web_queries=web_queries,policy_audit=policy_audit,ledger=ledger,health=h,monitoring=monitoring,financial_simulation=simulation,policy=POLICY,paused=paused,data_contract={'currency':'EUR','money_unit':'cents','main_dashboard_excludes_synthetic':True,'ledger_source':'SQLite ledger table','projects_source':'SQLite projects table','versions_source':'SQLite versions table','decisions_source':'SQLite experiences payload','web_sources_source':'SQLite web_sources table; public untrusted evidence with provenance','test_projects_are_synthetic':True})
 
 def action(path,data,agent=False):
     if path=='/api/projects': return start(data)
@@ -501,6 +540,7 @@ class Agent(http.server.BaseHTTPRequestHandler):
             elif name=='atlas_experience': result={'experiences':memories(),'policy':POLICY}
             elif name=='atlas_n8n_test': result=action('/api/n8n/test',{},True)
             elif name=='atlas_opportunity_run': result=run_opportunity_cycle()
+            elif name=='atlas_web_opportunity_run': result=run_web_opportunity_cycle()
             elif name=='atlas_autonomy_test':
                 projects=snapshot()['projects'][:3]
                 if len(projects)<2:raise ValueError('Deux projets minimum requis')
@@ -525,7 +565,6 @@ if __name__=='__main__':
     os.umask(0o077); init()
     dashboard=http.server.ThreadingHTTPServer(('127.0.0.1',8766),Dashboard)
     preview=http.server.ThreadingHTTPServer(('127.0.0.1',8767),Prototype)
-    pathlib.Path(SOCKET).parent.mkdir(parents=True,exist_ok=True)
     if os.path.exists(SOCKET): os.unlink(SOCKET)
     agent=socketserver.ThreadingUnixStreamServer(SOCKET,Agent); os.chmod(SOCKET,0o660)
     for target in (preview.serve_forever,agent.serve_forever,worker,monitor): threading.Thread(target=target,daemon=True).start()

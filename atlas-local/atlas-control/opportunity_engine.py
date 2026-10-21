@@ -22,9 +22,9 @@ def generate_opportunities(context=None):
     context = context or {}
     lessons = " ".join(context.get("lessons", []))[:500]
     return [
-        {"name":"SignalDesk","problem":"Les petites équipes perdent les signaux importants dispersés dans leurs notes.","target_user":"Petites équipes de service","channel":"réseau local et entretiens","hypothesis":"Une synthèse locale quotidienne réduit les oublis.","value_potential":"moyen","recurrence":"quotidienne","difficulty":"faible","build_days":2,"competition":"moyenne","differentiation":"local-first et traçable","learning_potential":"élevé","risk":"faible","reversible":True,"local_test_possible":True,"confidence":"medium","evidence":{"reachable_users":35,"pain_interviews":6,"weekly_frequency":5,"estimated_cost_eur":0,"memory_signal":lessons}},
-        {"name":"StockCalm","problem":"Les micro-commerces oublient leurs seuils de stock et découvrent les ruptures trop tard.","target_user":"Micro-commerçants locaux","channel":"association locale","hypothesis":"Une alerte locale simple réduit les ruptures évitables.","value_potential":"élevé","recurrence":"hebdomadaire","difficulty":"moyenne","build_days":4,"competition":"forte","differentiation":"aucun cloud requis","learning_potential":"moyen","risk":"faible","reversible":True,"local_test_possible":True,"confidence":"medium","evidence":{"reachable_users":30,"pain_interviews":7,"weekly_frequency":4,"estimated_cost_eur":0}},
-        {"name":"PublicViral","problem":"Créer une audience publique généraliste sans problème utilisateur suffisamment précis.","target_user":"Grand public","channel":"publication publique","hypothesis":"La viralité seule créera une demande.","value_potential":"incertain","recurrence":"inconnue","difficulty":"élevée","build_days":30,"competition":"très forte","differentiation":"faible","learning_potential":"faible","risk":"élevé","reversible":False,"local_test_possible":False,"confidence":"low","evidence":{"reachable_users":1000,"pain_interviews":1,"weekly_frequency":1,"estimated_cost_eur":0}},
+        {"name":"SignalDesk","problem":"Les petites équipes perdent les signaux importants dispersés dans leurs notes.","target_user":"Petites équipes de service","channel":"réseau local et entretiens","hypothesis":"Une synthèse locale quotidienne réduit les oublis.","research_queries":["team knowledge management information overload software pricing small business"],"value_potential":"moyen","recurrence":"quotidienne","difficulty":"faible","build_days":2,"competition":"moyenne","differentiation":"local-first et traçable","learning_potential":"élevé","risk":"faible","reversible":True,"local_test_possible":True,"confidence":"medium","evidence":{"reachable_users":35,"pain_interviews":6,"weekly_frequency":5,"estimated_cost_eur":0,"memory_signal":lessons}},
+        {"name":"StockCalm","problem":"Les micro-commerces oublient leurs seuils de stock et découvrent les ruptures trop tard.","target_user":"Micro-commerçants locaux","channel":"association locale","hypothesis":"Une alerte locale simple réduit les ruptures évitables.","research_queries":["small business inventory management software stockout pricing"],"value_potential":"élevé","recurrence":"hebdomadaire","difficulty":"moyenne","build_days":4,"competition":"forte","differentiation":"aucun cloud requis","learning_potential":"moyen","risk":"faible","reversible":True,"local_test_possible":True,"confidence":"medium","evidence":{"reachable_users":30,"pain_interviews":7,"weekly_frequency":4,"estimated_cost_eur":0}},
+        {"name":"PublicViral","problem":"Créer une audience publique généraliste sans problème utilisateur suffisamment précis.","target_user":"Grand public","channel":"publication publique","hypothesis":"La viralité seule créera une demande.","research_queries":["creator audience management software pricing market"],"value_potential":"incertain","recurrence":"inconnue","difficulty":"élevée","build_days":30,"competition":"très forte","differentiation":"faible","learning_potential":"faible","risk":"élevé","reversible":False,"local_test_possible":False,"confidence":"low","evidence":{"reachable_users":1000,"pain_interviews":1,"weekly_frequency":1,"estimated_cost_eur":0}},
     ]
 
 
@@ -34,7 +34,12 @@ def evaluate(candidate):
     pain = min(1.0, max(0.0, float(evidence.get("pain_interviews", 0)) / 10))
     frequency = min(1.0, max(0.0, float(evidence.get("weekly_frequency", 0)) / 5))
     cost = min(1.0, max(0.0, 1 - float(evidence.get("estimated_cost_eur", 0)) / 50))
-    score = round(100 * (0.30 * reach + 0.30 * pain + 0.25 * frequency + 0.15 * cost), 2)
+    base_score = 100 * (0.30 * reach + 0.30 * pain + 0.25 * frequency + 0.15 * cost)
+    if evidence.get("web_research_run_id"):
+        web_quality = 0.5 * min(1.0, float(evidence.get("web_evidence_count", 0)) / 4) + 0.5 * min(1.0, float(evidence.get("independent_domains", 0)) / 3)
+        score = round(0.75 * base_score + 25 * web_quality, 2)
+    else:
+        score = round(base_score, 2)
     gates = {
         "specific_problem": len(str(candidate.get("problem", "")).strip()) >= 20,
         "defined_user": len(str(candidate.get("target_user", "")).strip()) >= 8,
@@ -44,6 +49,7 @@ def evaluate(candidate):
         "reversible": candidate.get("reversible") is True,
         "bounded_build": 0 < int(candidate.get("build_days", 999)) <= 14,
         "learning_value": candidate.get("learning_potential") in ("moyen", "élevé"),
+        "multi_source_evidence": not evidence.get("web_research_run_id") or evidence.get("independent_domains", 0) >= 2,
     }
     return score, gates
 
@@ -57,7 +63,7 @@ def select_opportunity(db, candidates, create_project):
     for candidate in candidates:
         score, gates = evaluate(candidate)
         identifier = uuid.uuid4().hex
-        evidence = dict(candidate.get("evidence", {}), qualitative_gates=gates, hypothesis=candidate.get("hypothesis"), confidence=candidate.get("confidence","low"), qualitative_analysis={key:candidate.get(key) for key in ("value_potential","recurrence","difficulty","build_days","competition","differentiation","learning_potential","risk","reversible")})
+        evidence = dict(candidate.get("evidence", {}), qualitative_gates=gates, hypothesis=candidate.get("hypothesis"), confidence=candidate.get("confidence","low"), web_analysis=candidate.get("web_analysis",{}), qualitative_analysis={key:candidate.get(key) for key in ("value_potential","recurrence","difficulty","build_days","competition","differentiation","learning_potential","risk","reversible")})
         status = "eligible" if all(gates.values()) else "rejected"
         db.execute("INSERT INTO opportunities VALUES(?,?,?,?,?,?,?,?,?,?,?)", (identifier, run_id, _now(), candidate["name"], candidate["problem"], candidate["target_user"], candidate.get("channel", ""), json.dumps(evidence, ensure_ascii=False), score, status, None))
         if status == "eligible":

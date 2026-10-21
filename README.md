@@ -1,6 +1,6 @@
 # Atlas / Automaton
 
-Atlas est une version modifiée et étendue d’[Automaton](https://github.com/Conway-Research/automaton), le runtime d’agent autonome de Conway. Cette distribution ajoute notamment un tableau de bord local, un générateur de projets, un moteur d’opportunités et de décision, une mémoire persistante, une boucle autonome contrôlée, du monitoring, une politique de sécurité, une finance strictement simulée, une reprise après incident et un pont n8n sans credentials.
+Atlas est une version modifiée et étendue d’[Automaton](https://github.com/Conway-Research/automaton), le runtime d’agent autonome de Conway. Cette distribution ajoute notamment un tableau de bord local, un générateur générique multi-catégories, une mémoire inter-projets, un moteur d’opportunités et de décision, une recherche Web publique contrôlée, une boucle autonome durable, du monitoring, une politique de sécurité et d’audit, une finance strictement simulée, une reprise après incident et un pont n8n sans credentials.
 
 Le dépôt contient uniquement le code et des exemples de configuration. Il ne contient ni état d’exécution, ni wallet, ni base SQLite, ni credential. Le pack d’état partenaire `Atlas-Partner-State-Pack.zip` est transmis séparément et ne doit jamais être ajouté à Git.
 
@@ -80,7 +80,36 @@ Ouvrez ensuite :
 
 Le tableau de bord n’écoute que sur l’interface locale. Les previews sont générées dans l’état local, isolées par projet et par version. Elles servent à examiner le résultat technique ; elles ne constituent pas un déploiement public et n’exécutent aucune action externe.
 
-Pour une installation Linux persistante, adaptez puis installez l’unité fournie dans `atlas-local/atlas-control/systemd/atlas-control.service`. Elle suppose que le code Atlas est copié dans `/opt/atlas-control` et que l’utilisateur système `atlas-control` dispose de `/var/lib/atlas-control` et `/run/atlas-control`.
+## Web public contrôlé
+
+Le gateway de `atlas-local/atlas-business/` fournit le pipeline `SEARCH → OPEN → EXTRACT → NORMALIZE → SOURCE → STORE`. Il utilise des interfaces publiques, respecte `robots.txt`, limite le débit et les tentatives, refuse les redirections, les IP privées, les connexions, CAPTCHA, paiements, uploads et téléchargements dangereux, puis traite chaque page comme une preuve non fiable.
+
+Les recherches conservent l’URL canonique, le domaine, le titre, les dates disponibles, l’extrait, le type de source, la confiance et le rattachement à l’opportunité ou au projet. Les doublons d’URL, de contenu et d’entité sont filtrés. Une opportunité Web n’est sélectionnable qu’après au moins deux sources issues de deux domaines indépendants. Aucune fonction de contact, publication, compte externe, paiement ou contournement anti-bot n’est fournie.
+
+Pour une installation Linux/WSL persistante, créez des utilisateurs système distincts `atlas-tools` et `atlas-control`, ainsi qu’un groupe partagé `atlas`. Ajoutez aussi au groupe `atlas` l’utilisateur qui lance Automaton :
+
+```bash
+sudo groupadd --system atlas 2>/dev/null || true
+sudo groupadd --system atlas-control 2>/dev/null || true
+sudo useradd --system --home /nonexistent --shell /usr/sbin/nologin --gid atlas atlas-tools 2>/dev/null || true
+sudo useradd --system --home /nonexistent --shell /usr/sbin/nologin --gid atlas-control atlas-control 2>/dev/null || true
+sudo usermod -aG atlas atlas-control
+sudo usermod -aG atlas "$USER"
+sudo install -d -o atlas-tools -g atlas -m 0750 /srv/atlas-workspace
+sudo install -d -o root -g root -m 0755 /opt/atlas-business /opt/atlas-control
+sudo cp atlas-local/atlas-business/*.py /opt/atlas-business/
+sudo cp atlas-local/atlas-control/*.py /opt/atlas-control/
+sudo cp -r atlas-local/atlas-control/static atlas-local/atlas-control/templates /opt/atlas-control/
+sudo chown -R root:root /opt/atlas-business /opt/atlas-control
+sudo find /opt/atlas-business /opt/atlas-control -type d -exec chmod 0755 {} +
+sudo find /opt/atlas-business /opt/atlas-control -type f -exec chmod 0644 {} +
+sudo cp atlas-local/atlas-business/systemd/atlas-business.service /etc/systemd/system/
+sudo cp atlas-local/atlas-control/systemd/atlas-control.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now atlas-business atlas-control
+```
+
+Les fichiers placés sous `/opt` doivent rester détenus par `root:root` et non modifiables par les comptes de service. Une nouvelle session peut être nécessaire après l’ajout de l’utilisateur interactif au groupe `atlas`.
 
 ## n8n optionnel
 
@@ -102,6 +131,12 @@ Suite Atlas/Python :
 python3 -m unittest discover -s atlas-local/atlas-control -p 'test_*.py'
 ```
 
+Validation de publication (secrets, état local et chemins personnels) :
+
+```bash
+python3 scripts/validate-public-release.py
+```
+
 Les tests peuvent créer des fichiers temporaires et des bases éphémères hors Git. Ils ne doivent jamais réutiliser une base Atlas vivante.
 
 ## Structure principale
@@ -110,6 +145,7 @@ Les tests peuvent créer des fichiers temporaires et des bases éphémères hors
 src/                              runtime Automaton et extensions
 packages/cli/                     CLI opérateur
 atlas-local/atlas-control/        dashboard, moteurs et previews Atlas
+atlas-local/atlas-business/       gateway Web public restreint et workspace isolé
 atlas-local/atlas-control/static/ interface du dashboard
 atlas-local/atlas-control/n8n-workflows/ workflows locaux sans credentials
 scripts/                          installation, sauvegarde et tests d’endurance

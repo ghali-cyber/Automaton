@@ -14,6 +14,11 @@ jobs:
       - uses: pnpm/action-setup@v4
       - run: pnpm install --frozen-lockfile
       - run: pnpm run typecheck
+      - run: pnpm run build
+      - name: Validate public release contents
+        run: python3 scripts/validate-public-release.py
+      - name: Run Atlas Python tests
+        run: python3 -m unittest discover -s atlas-local/atlas-control -p 'test_*.py'
       - name: Run tests
         timeout-minutes: 10
         run: |

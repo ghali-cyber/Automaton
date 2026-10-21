@@ -1,13 +1,19 @@
 [Unit]
 Description=Atlas local control plane
-After=network.target ollama.service
+After=network.target atlas-business.service ollama.service
+Wants=atlas-business.service ollama.service
 
 [Service]
 Type=simple
 User=atlas-control
 Group=atlas-control
+SupplementaryGroups=atlas
 WorkingDirectory=/opt/atlas-control
-ExecStart=/usr/bin/python3 /opt/atlas-control/control.py
+ExecStart=/usr/bin/python3 -I /opt/atlas-control/launch.py
+StateDirectory=atlas-control
+StateDirectoryMode=0700
+RuntimeDirectory=atlas-control
+RuntimeDirectoryMode=0750
 Restart=on-failure
 RestartSec=5
 UMask=0077
@@ -15,11 +21,21 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
 ReadWritePaths=/var/lib/atlas-control /run/atlas-control
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32
 CapabilityBoundingSet=
 LockPersonality=true
 MemoryDenyWriteExecute=true
+MemoryMax=256M
+MemorySwapMax=0
+TasksMax=64
+CPUQuota=100%
 
 [Install]
 WantedBy=multi-user.target
